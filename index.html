@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Monte Carlo — Claude MTD Spend</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0f1117;--surface:#161923;--card:#1c202e;--border:#252a3a;--text:#e4e6f0;--muted:#6b7280;--accent:#d9724a;--green:#22c55e;--red:#ef4444}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh;font-size:14px}
+header{padding:20px 32px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.logo{display:flex;align-items:center;gap:12px}
+.logo-mark{width:32px;height:32px;background:var(--accent);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px}
+.title{font-size:17px;font-weight:600}
+.subtitle{font-size:12px;color:var(--muted);margin-top:2px}
+.updated{font-size:12px;color:var(--muted)}
+.wrap{padding:28px 32px;max-width:1200px;margin:0 auto}
+.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px 20px}
+.card-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px}
+.card-value{font-size:26px;font-weight:700}
+.card-meta{font-size:12px;color:var(--muted);margin-top:5px}
+.section{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:22px;margin-bottom:18px}
+.section-title{font-size:13px;font-weight:600;margin-bottom:16px}
+.chart-wrap{position:relative;height:320px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:9px 12px;color:var(--muted);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);cursor:pointer;user-select:none;white-space:nowrap}
+th:hover{color:var(--text)}
+th.sorted{color:var(--accent)}
+th:not(:first-child){text-align:right}
+td{padding:10px 12px;border-bottom:1px solid #1a1e2b;white-space:nowrap}
+td:not(:first-child){text-align:right}
+tr:last-child td{border-bottom:none}
+tbody tr:hover td{background:#1a1e2b}
+.rank{color:var(--muted);font-size:12px;width:28px;display:inline-block}
+.bar{display:inline-block;height:6px;border-radius:3px;background:var(--accent);opacity:.7;margin-left:8px;vertical-align:middle}
+.pill{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px}
+.pill-hi{background:rgba(217,114,74,.15);color:#e89070}
+.pill-md{background:rgba(107,159,212,.15);color:#8ab5d9}
+.pill-lo{background:rgba(108,200,145,.12);color:#7fcca0}
+.search-wrap{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+input[type=search]{background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:7px 12px;color:var(--text);font-size:13px;width:220px;outline:none}
+input[type=search]::placeholder{color:var(--muted)}
+input[type=search]:focus{border-color:var(--accent)}
+.count{font-size:12px;color:var(--muted)}
+footer{text-align:center;padding:16px;color:var(--muted);font-size:11px;border-top:1px solid var(--border)}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">
+    <div class="logo-mark">&#129302;</div>
+    <div>
+      <div class="title">Claude MTD Spend &mdash; Monte Carlo</div>
+      <div class="subtitle">claude.ai &middot; Organization usage</div>
+    </div>
+  </div>
+  <div class="updated">Updated <span id="updatedAt"></span></div>
+</header>
+
+<div class="wrap">
+  <div class="cards">
+    <div class="card">
+      <div class="card-label">Total MTD Spend</div>
+      <div class="card-value" id="c-total"></div>
+      <div class="card-meta" id="c-month"></div>
+    </div>
+    <div class="card">
+      <div class="card-label">Active Users</div>
+      <div class="card-value" id="c-users"></div>
+      <div class="card-meta" id="c-zero"></div>
+    </div>
+    <div class="card">
+      <div class="card-label">Top Spender</div>
+      <div class="card-value" id="c-top" style="font-size:17px;padding-top:5px"></div>
+      <div class="card-meta" id="c-top-amt"></div>
+    </div>
+    <div class="card">
+      <div class="card-label">Avg per Active User</div>
+      <div class="card-value" id="c-avg"></div>
+      <div class="card-meta" id="c-median"></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Top 15 spenders</div>
+    <div class="chart-wrap"><canvas id="chartBar"></canvas></div>
+  </div>
+
+  <div class="section">
+    <div class="search-wrap">
+      <div class="section-title" style="margin:0">All members</div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <span class="count" id="tableCount"></span>
+        <input type="search" id="searchBox" placeholder="Search name or email&hellip;" oninput="filterTable()">
+      </div>
+    </div>
+    <table id="memberTable">
+      <thead>
+        <tr>
+          <th onclick="sortTable(0)" data-col="0">#&nbsp;&nbsp;Name</th>
+          <th onclick="sortTable(1)" data-col="1">Email</th>
+          <th onclick="sortTable(2)" data-col="2" class="sorted">MTD Spend &#9662;</th>
+          <th onclick="sortTable(3)" data-col="3">Share</th>
+          <th onclick="sortTable(4)" data-col="4">Tier</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<footer>Claude.ai Organization admin data &middot; Monte Carlo Data &middot; No data leaves this page</footer>
+
+<script>
+const UPDATED = "6/26/2026 2:22 PM";
+const DATA = [{"name": "Nicolás Castagnet", "email": "ncastagnet@montecarlodata.com", "spend": 12574.12}, {"name": "Mauricio De Diana", "email": "mdediana@montecarlodata.com", "spend": 11270.42}, {"name": "Adam Rothrock", "email": "arothrock@montecarlodata.com", "spend": 9004.97}, {"name": "Carolina Capdevila", "email": "ccapdevila@montecarlodata.com", "spend": 8303.61}, {"name": "Yael Chemla", "email": "ychemla@montecarlodata.com", "spend": 7440.33}, {"name": "Santiago Aguiar", "email": "saguiar@montecarlodata.com", "spend": 7229.77}, {"name": "Dave Leyden", "email": "dleyden@montecarlodata.com", "spend": 5765.93}, {"name": "Federico Benitez", "email": "fbenitez@montecarlodata.com", "spend": 5693.73}, {"name": "Ryan Kelch", "email": "rkelch@montecarlodata.com", "spend": 4554.9}, {"name": "Gene Hynson", "email": "ghynson@montecarlodata.com", "spend": 4352.3}, {"name": "Elor Arieli", "email": "earieli@montecarlodata.com", "spend": 4089.2}, {"name": "Jett Love", "email": "jlove@montecarlodata.com", "spend": 3475.81}, {"name": "Gavin Fitzpatrick", "email": "gfitzpatrick@montecarlodata.com", "spend": 3040.08}, {"name": "Andy Liu", "email": "aliu@montecarlodata.com", "spend": 2943.91}, {"name": "Martin Rostan", "email": "mrostan@montecarlodata.com", "spend": 2752.87}, {"name": "Grant Brewer", "email": "gbrewer@montecarlodata.com", "spend": 2712.67}, {"name": "Halisson Vitor", "email": "hvitor@montecarlodata.com", "spend": 2558.37}, {"name": "Lina Zhan", "email": "lzhan@montecarlodata.com", "spend": 2497.74}, {"name": "Jarek Józefowski", "email": "jjozefowski@montecarlodata.com", "spend": 2466.5}, {"name": "Bharath Yarlagadda", "email": "byarlagadda@montecarlodata.com", "spend": 2331.51}, {"name": "Steven Carlson", "email": "scarlson@montecarlodata.com", "spend": 2129.9}, {"name": "Alys Chen", "email": "achen@montecarlodata.com", "spend": 2109.38}, {"name": "Omri Kramer", "email": "okramer@montecarlodata.com", "spend": 2036.61}, {"name": "Hector Jarrin", "email": "hjarrin@montecarlodata.com", "spend": 1905.34}, {"name": "Liz Chanin", "email": "echanin@montecarlodata.com", "spend": 1848.86}, {"name": "Bayard Neville", "email": "bneville@montecarlodata.com", "spend": 1801.03}, {"name": "Niall O'Beirn", "email": "nobeirn@montecarlodata.com", "spend": 1754.91}, {"name": "Tom Offermann", "email": "toffermann@montecarlodata.com", "spend": 1743.63}, {"name": "Wojtek Deka", "email": "wdeka@montecarlodata.com", "spend": 1707.08}, {"name": "Corey Fritz", "email": "cfritz@montecarlodata.com", "spend": 1489.88}, {"name": "Sam Crespo", "email": "screspo@montecarlodata.com", "spend": 1459.31}, {"name": "Johanna Lalou", "email": "jlalou@montecarlodata.com", "spend": 1378.66}, {"name": "Yijia Zhan", "email": "yzhan@montecarlodata.com", "spend": 1373.14}, {"name": "Alex Roitman", "email": "aroitman@montecarlodata.com", "spend": 1307.03}, {"name": "Ryan Canby", "email": "rcanby@montecarlodata.com", "spend": 1301.4}, {"name": "Prateek Chawla", "email": "pchawla@montecarlodata.com", "spend": 1270.79}, {"name": "Carli Monterastelli", "email": "cmonterastelli@montecarlodata.com", "spend": 1140.95}, {"name": "Terry Widger", "email": "twidger@montecarlodata.com", "spend": 1088.66}, {"name": "Matthew Stevens", "email": "mstevens@montecarlodata.com", "spend": 1054.49}, {"name": "Ashley Rothrock", "email": "amrothrock@montecarlodata.com", "spend": 1049.78}, {"name": "Stee Crowley", "email": "scrowley@montecarlodata.com", "spend": 1024.26}, {"name": "Josh Cypert", "email": "jcypert@montecarlodata.com", "spend": 972.19}, {"name": "Marco Schweighauser", "email": "mschweighauser@montecarlodata.com", "spend": 963.31}, {"name": "Scott Waller", "email": "swaller@montecarlodata.com", "spend": 937.79}, {"name": "Armen Kitbalian", "email": "akitbalian@montecarlodata.com", "spend": 918.88}, {"name": "Ronan Spratt", "email": "rspratt@montecarlodata.com", "spend": 915.55}, {"name": "Sam Smith", "email": "ssmith@montecarlodata.com", "spend": 893.08}, {"name": "Jonathan Avila", "email": "javila@montecarlodata.com", "spend": 871.78}, {"name": "McWayne Mumford", "email": "mmumford@montecarlodata.com", "spend": 853.57}, {"name": "Dorit Linevych", "email": "dlinevych@montecarlodata.com", "spend": 823.37}, {"name": "Jiri Tobisek", "email": "jtobisek@montecarlodata.com", "spend": 822.62}, {"name": "Omer Spillinger", "email": "ospillinger@montecarlodata.com", "spend": 804.07}, {"name": "Rosie Cardoso", "email": "rcardoso@montecarlodata.com", "spend": 771.43}, {"name": "Abish Srinath", "email": "asrinath@montecarlodata.com", "spend": 744.96}, {"name": "Shelli Francoise", "email": "sfrancoise@montecarlodata.com", "spend": 667.23}, {"name": "Janna Biagio", "email": "jbiagio@montecarlodata.com", "spend": 661.72}, {"name": "Olesia Garbuzova", "email": "ogarbuzova@montecarlodata.com", "spend": 652.38}, {"name": "Jaleene Reid", "email": "jreid@montecarlodata.com", "spend": 622.72}, {"name": "Matthew Armstrong", "email": "marmstrong@montecarlodata.com", "spend": 592.19}, {"name": "Jayne Tamboia", "email": "jtamboia@montecarlodata.com", "spend": 577.72}, {"name": "Belén Garcia", "email": "bgarcia@montecarlodata.com", "spend": 574.13}, {"name": "Jason Cheney", "email": "jcheney@montecarlodata.com", "spend": 561.16}, {"name": "Neil Gleeson", "email": "ngleeson@montecarlodata.com", "spend": 548.06}, {"name": "Tyler Larson", "email": "tlarson@montecarlodata.com", "spend": 520.4}, {"name": "Bridget Vogt", "email": "bvogt@montecarlodata.com", "spend": 514.31}, {"name": "Jen Hubert", "email": "jhubert@montecarlodata.com", "spend": 491.33}, {"name": "Kieran Williams", "email": "kwilliams@montecarlodata.com", "spend": 474.99}, {"name": "Laura Muñoz Jiménez", "email": "ljimenez@montecarlodata.com", "spend": 390.87}, {"name": "Devon Bridges", "email": "dbridges@montecarlodata.com", "spend": 389.62}, {"name": "Virna Sekuj", "email": "vsekuj@montecarlodata.com", "spend": 372.57}, {"name": "Colt Sellers", "email": "csellers@montecarlodata.com", "spend": 331.03}, {"name": "Pablo Carretero Alvarez", "email": "palvarez@montecarlodata.com", "spend": 313.87}, {"name": "Lior Gavish", "email": "lgavish@montecarlodata.com", "spend": 309.3}, {"name": "Prantik Bhattacharyya", "email": "pbhattacharyya@montecarlodata.com", "spend": 308.67}, {"name": "Pawan Singh", "email": "psingh@montecarlodata.com", "spend": 308.05}, {"name": "Christian Cortman", "email": "ccortman@montecarlodata.com", "spend": 306.39}, {"name": "Seyfullah Ural", "email": "sural@montecarlodata.com", "spend": 305.38}, {"name": "Mike Ebbers", "email": "mebbers@montecarlodata.com", "spend": 297.72}, {"name": "Mor Ofir", "email": "mofir@montecarlodata.com", "spend": 290.03}, {"name": "Jonny McCormick", "email": "jmccormick@montecarlodata.com", "spend": 282.91}, {"name": "Rachel Roy", "email": "rroy@montecarlodata.com", "spend": 260.95}, {"name": "Taylor Davis", "email": "tdavis@montecarlodata.com", "spend": 257.12}, {"name": "Ethan Post", "email": "epost@montecarlodata.com", "spend": 255.57}, {"name": "Vanessa Mehaouchi", "email": "vmehaouchi@montecarlodata.com", "spend": 230.65}, {"name": "Alec Illingworth-Kay", "email": "aikay@montecarlodata.com", "spend": 211.06}, {"name": "Jordan Van Horn", "email": "jvanhorn@montecarlodata.com", "spend": 195.87}, {"name": "Jennifer Elkhouri", "email": "jelkhouri@montecarlodata.com", "spend": 180.51}, {"name": "Matthias Holzinger", "email": "mholzinger@montecarlodata.com", "spend": 179.51}, {"name": "Itay Bleier", "email": "ibleier@montecarlodata.com", "spend": 162.3}, {"name": "Ashley Eakers", "email": "aeakers@montecarlodata.com", "spend": 160.81}, {"name": "Ashleigh Blalock", "email": "ablalock@montecarlodata.com", "spend": 154.2}, {"name": "Phil Volkert", "email": "pvolkert@montecarlodata.com", "spend": 152.14}, {"name": "Anna Morillo", "email": "amorillo@montecarlodata.com", "spend": 148.46}, {"name": "Karthick Sriraman", "email": "ksriraman@montecarlodata.com", "spend": 140.51}, {"name": "Eric Woodring", "email": "ewoodring@montecarlodata.com", "spend": 131.84}, {"name": "Brittany Smith", "email": "bsmith@montecarlodata.com", "spend": 129.56}, {"name": "Mike Potocki", "email": "mpotocki@montecarlodata.com", "spend": 125.88}, {"name": "Heather Leo", "email": "hleo@montecarlodata.com", "spend": 120.77}, {"name": "Dominik Doughty", "email": "ddoughty@montecarlodata.com", "spend": 113.96}, {"name": "Jonathan Roberts", "email": "jroberts@montecarlodata.com", "spend": 108.31}, {"name": "Jacob Malcolm", "email": "jmalcolm@montecarlodata.com", "spend": 101.87}, {"name": "Tim Nowak", "email": "tnowak@montecarlodata.com", "spend": 79.98}, {"name": "Dan Nemo", "email": "dnemo@montecarlodata.com", "spend": 71.83}, {"name": "Tanner Brockbank", "email": "tbrockbank@montecarlodata.com", "spend": 70.57}, {"name": "Steve Stenberg", "email": "sstenberg@montecarlodata.com", "spend": 67.22}, {"name": "Stephen Durant", "email": "sdurant@montecarlodata.com", "spend": 62.5}, {"name": "Kev Markwell", "email": "kmarkwell@montecarlodata.com", "spend": 60.28}, {"name": "Davis Veazey", "email": "dveazey@montecarlodata.com", "spend": 57.19}, {"name": "Jas Sidhu", "email": "jsidhu@montecarlodata.com", "spend": 56.01}, {"name": "Mike Siskowski", "email": "msiskowski@montecarlodata.com", "spend": 52.97}, {"name": "Aidan Denig", "email": "adenig@montecarlodata.com", "spend": 52.22}, {"name": "Zhongying Qiao", "email": "zqiao@montecarlodata.com", "spend": 49.86}, {"name": "Matt Zaniewski", "email": "mzaniewski@montecarlodata.com", "spend": 48.54}, {"name": "Charlie Reichert", "email": "creichert@montecarlodata.com", "spend": 45.72}, {"name": "Darby Kehoe", "email": "dkehoe@montecarlodata.com", "spend": 44.01}, {"name": "John Gathercole", "email": "jgathercole@montecarlodata.com", "spend": 42.2}, {"name": "Howard Bolton", "email": "hbolton@montecarlodata.com", "spend": 35.24}, {"name": "Alex Quinn", "email": "aquinn@montecarlodata.com", "spend": 34.13}, {"name": "Angela Poerschke", "email": "apoerschke@montecarlodata.com", "spend": 26.45}, {"name": "Alik Peltinovich", "email": "apeltinovich@montecarlodata.com", "spend": 25.74}, {"name": "Lucas Thomas", "email": "lthomas@montecarlodata.com", "spend": 19.66}, {"name": "Barr M Outreach Service Account", "email": "barrm@montecarlodata.com", "spend": 18.98}, {"name": "Barr Moses", "email": "bmoses@montecarlodata.com", "spend": 18.82}, {"name": "Easton Hunt", "email": "ehunt@montecarlodata.com", "spend": 18.7}, {"name": "Fabian Breymaier", "email": "fbreymaier@montecarlodata.com", "spend": 16.1}, {"name": "Chris Meyer", "email": "cmeyer@montecarlodata.com", "spend": 16.01}, {"name": "Jaimie Ayliffe", "email": "jayliffe@montecarlodata.com", "spend": 14.71}, {"name": "Daniel Ellis", "email": "dellis@montecarlodata.com", "spend": 12.1}, {"name": "Michael Krec", "email": "Mkrec@montecarlodata.com", "spend": 8.23}, {"name": "George Maroudas", "email": "gmaroudas@montecarlodata.com", "spend": 3.94}, {"name": "Jans Kline", "email": "jkline@montecarlodata.com", "spend": 3.77}, {"name": "Kyle Witherspoon", "email": "kwitherspoon@montecarlodata.com", "spend": 3.52}, {"name": "Jess Zepeda", "email": "jzepeda@montecarlodata.com", "spend": 0.84}, {"name": "Elya Pardes", "email": "epardes@montecarlodata.com", "spend": 0.57}, {"name": "Cris Bacon", "email": "cbacon@montecarlodata.com", "spend": 0.0}, {"name": "IT Service Account", "email": "sa-it@montecarlodata.com", "spend": 0.0}];
+
+const fmt = n => '$'+(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const fmtK = n => n>=1000 ? '$'+(n/1000).toFixed(1)+'k' : fmt(n);
+
+document.getElementById('updatedAt').textContent = UPDATED;
+
+// Filter to real users only (exclude $0 service accounts with "Service Account" in name)
+const active = DATA.filter(m => m.spend > 0 && !m.name.toLowerCase().includes('service account'));
+const all = DATA.filter(m => !m.name.toLowerCase().includes('service account'));
+const total = all.reduce((s,m)=>s+m.spend,0);
+const avgSpend = active.reduce((s,m)=>s+m.spend,0)/active.length;
+const sorted = [...all].sort((a,b)=>b.spend-a.spend);
+const median = sorted[Math.floor(sorted.length/2)]?.spend||0;
+
+document.getElementById('c-total').textContent = fmt(total);
+document.getElementById('c-month').textContent = new Date().toLocaleDateString('en-US',{month:'long',year:'numeric'});
+document.getElementById('c-users').textContent = active.length;
+document.getElementById('c-zero').textContent = (all.length - active.length) + ' with $0 spend';
+document.getElementById('c-top').textContent = sorted[0]?.name||'—';
+document.getElementById('c-top-amt').textContent = fmt(sorted[0]?.spend||0)+' ('+((sorted[0]?.spend||0)/total*100).toFixed(1)+'% of total)';
+document.getElementById('c-avg').textContent = fmt(avgSpend);
+document.getElementById('c-median').textContent = 'Median: '+fmt(median);
+
+// Bar chart - top 15
+const top15 = sorted.slice(0,15);
+new Chart(document.getElementById('chartBar').getContext('2d'),{
+  type:'bar',
+  data:{
+    labels: top15.map(m=>m.name.split(' ')[0]+' '+m.name.split(' ').slice(-1)[0]),
+    datasets:[{
+      data: top15.map(m=>m.spend),
+      backgroundColor: top15.map((_,i)=>i===0?'#d9724a':i<3?'#c4623b':i<6?'#6b9fd4':'#3d5a75'),
+      borderRadius:4,borderSkipped:false
+    }]
+  },
+  options:{
+    indexAxis:'y',responsive:true,maintainAspectRatio:false,
+    plugins:{
+      legend:{display:false},
+      tooltip:{callbacks:{label:ctx=>` ${fmt(ctx.raw)}`}}
+    },
+    scales:{
+      x:{grid:{color:'#1a1e2b'},ticks:{color:'#6b7280',callback:v=>fmtK(v)}},
+      y:{grid:{color:'#1a1e2b'},ticks:{color:'#e4e6f0',font:{size:12}}}
+    }
+  }
+});
+
+// Table
+let sortCol=2, sortDir=-1;
+let filtered = sorted;
+
+function tierPill(spend){
+  if(spend>=3000) return '<span class="pill pill-hi">High</span>';
+  if(spend>=500) return '<span class="pill pill-md">Mid</span>';
+  return '<span class="pill pill-lo">Low</span>';
+}
+
+function renderTable(){
+  const maxSpend = sorted[0]?.spend||1;
+  document.getElementById('tableCount').textContent = filtered.length+' of '+all.length+' members';
+  document.getElementById('tableBody').innerHTML = filtered.map((m,i)=>{
+    const globalRank = sorted.indexOf(m)+1;
+    const barW = Math.round(m.spend/maxSpend*80);
+    return `<tr>
+      <td><span class="rank">${globalRank}</span>${m.name}<span class="bar" style="width:${barW}px"></span></td>
+      <td style="color:var(--muted)">${m.email}</td>
+      <td><strong>${fmt(m.spend)}</strong></td>
+      <td style="color:var(--muted)">${(m.spend/total*100).toFixed(2)}%</td>
+      <td>${tierPill(m.spend)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function sortTable(col){
+  if(sortCol===col) sortDir*=-1; else {sortCol=col;sortDir=-1;}
+  document.querySelectorAll('th').forEach((th,i)=>{
+    th.className = i===col ? 'sorted' : '';
+    if(i===col) th.innerHTML = th.innerHTML.replace(/[▲▼]/g,'')+(sortDir<0?' ▼':' ▲');
+  });
+  filtered.sort((a,b)=>{
+    const vals=[a.name,a.email,a.spend,a.spend/total,a.spend];
+    const valb=[b.name,b.email,b.spend,b.spend/total,b.spend];
+    return typeof vals[col]==='string' ? vals[col].localeCompare(valb[col])*sortDir : (vals[col]-valb[col])*sortDir;
+  });
+  renderTable();
+}
+
+function filterTable(){
+  const q = document.getElementById('searchBox').value.toLowerCase();
+  filtered = q ? sorted.filter(m=>m.name.toLowerCase().includes(q)||m.email.toLowerCase().includes(q)) : [...sorted];
+  renderTable();
+}
+
+filtered = [...sorted];
+renderTable();
+</script>
+</body>
+</html>
