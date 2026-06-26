@@ -139,9 +139,9 @@ document.getElementById('c-top-amt').textContent = fmt(sorted[0]?.spend||0)+' ('
 document.getElementById('c-avg').textContent = fmt(avgSpend);
 document.getElementById('c-median').textContent = 'Median: '+fmt(median);
 
-// Bar chart - top 15
+// Bar chart - top 15 (wrapped so a CDN failure doesn't break the table)
 const top15 = sorted.slice(0,15);
-new Chart(document.getElementById('chartBar').getContext('2d'),{
+try { new Chart(document.getElementById('chartBar').getContext('2d'),{
   type:'bar',
   data:{
     labels: top15.map(m=>m.name.split(' ')[0]+' '+m.name.split(' ').slice(-1)[0]),
@@ -162,7 +162,7 @@ new Chart(document.getElementById('chartBar').getContext('2d'),{
       y:{grid:{color:'#1a1e2b'},ticks:{color:'#e4e6f0',font:{size:12}}}
     }
   }
-});
+}); } catch(e) { document.getElementById('chartBar').closest('.section').style.display='none'; }
 
 // Table
 let sortCol=2, sortDir=-1;
